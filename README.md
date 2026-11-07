@@ -26,6 +26,7 @@ Users enter a provider's NPI and receive an investigation report containing anom
 
 ### Investigation Workflow
 
+```mermaid
 flowchart TD
     A["CMS Claims Data"] --> B["Data Preparation & Feature Engineering"]
     B --> C["Provider-Level Features & Processed Data"]
@@ -41,10 +42,11 @@ flowchart TD
     G --> J
     H --> J
     I --> J
-
+```
 
 ### Application Architecture
 
+```mermaid
 flowchart TD
     A["User"] --> B["Streamlit Frontend"]
     B -->|"HTTP Requests"| C["FastAPI Backend"]
@@ -55,6 +57,7 @@ flowchart TD
     D -->|"Investigation Results"| C
     C -->|"JSON Response"| B
     B -->|"Displays Report & Visualizations"| A
+```
 
 The application is containerized using Docker Compose, with the Streamlit frontend and FastAPI backend running in separate containers and communicating over an internal Docker network.
 
