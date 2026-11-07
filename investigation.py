@@ -1,6 +1,11 @@
 # Healthcare Provider Investigation Backend
 
 import pandas as pd
+from src.report_helpers import (
+    group_elevated_features,
+    format_investigation_brief,
+    analyze_monthly_consistency,
+)
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from typing import TypedDict
@@ -359,49 +364,6 @@ def analyze_monthly_trends(state: InvestigationState):
     }
 
 
-# 9) Monthly consistency analysis
-def analyze_monthly_consistency(state):
-    monthly = state["monthly_activity"]
-
-    claim_values = [
-        row["monthly_claim_lines"] for row in monthly
-    ]
-
-    payment_values = [
-        row["monthly_payment"] for row in monthly
-    ]
-
-    avg_claims = sum(claim_values) / len(claim_values)
-    total_claims = sum(claim_values)
-    total_payment = sum(payment_values)
-
-    above_average_months = sum(
-        value > avg_claims for value in claim_values
-    )
-
-    busiest_months = sorted(
-        monthly,
-        key=lambda row: row["monthly_claim_lines"],
-        reverse=True
-    )[:5]
-
-    top_five_claims = sum(
-        row["monthly_claim_lines"] for row in busiest_months
-    )
-
-    top_five_share = top_five_claims / total_claims
-
-    return {
-        "above_average_months": above_average_months,
-        "months_observed": len(monthly),
-        "top_five_months": busiest_months,
-        "top_five_claim_share": top_five_share,
-        "total_claim_lines": total_claims,
-        "average_monthly_claim_lines": avg_claims,
-        "total_monthly_payment": total_payment,
-    }
-
-
 def analyze_consistency(state: InvestigationState):
     return {
         "monthly_consistency": analyze_monthly_consistency(state)
@@ -486,79 +448,6 @@ def build_investigation_report(state: InvestigationState):
             ]
         }
     }
-
-
-# 11) Group elevated features for investigator brief
-
-def group_elevated_features(elevated):
-    groups = {
-        "Utilization and volume": [
-            "log_total_claim_lines",
-            "log_unique_claims",
-            "log_unique_beneficiaries",
-            "log_unique_hcpcs",
-            "log_avg_monthly_claim_lines",
-            "log_max_monthly_claim_lines",
-        ],
-        "Payments": [
-            "log_total_payment",
-            "log_avg_monthly_payment",
-        ],
-        "Duration": [
-            "active_months",
-        ],
-        "Variability": [
-            "std_monthly_claim_lines",
-            "std_monthly_payment",
-        ],
-    }
-
-    grouped = {}
-
-    for group_name, feature_names in groups.items():
-        matches = [
-            item for item in elevated
-            if item["feature"] in feature_names
-        ]
-
-        if matches:
-            grouped[group_name] = matches
-
-    return grouped
-
-
-# 12) Investigator-facing report formatter
-
-def format_investigation_brief(report):
-    provider = report["provider_npi"]
-    screening = report["screening"]
-    population = report["population_context"]
-    activity = report["activity_summary"]
-    trends = report["monthly_trend_analysis"]
-    hcpcs = report["hcpcs_summary"]
-    limitations = report["limitations"]
-
-    lines = []
-
-    lines.append("# Provider Investigation Brief")
-    lines.append(f"\n**Provider NPI:** {provider}")
-
-    # Screening
-    lines.append("\n## 1. Screening")
-
-    lines.append(
-        screening.get(
-            "interpretation",
-            "No interpretation available."
-        )
-    )
-
-    lines.append(
-        f"\n- Anomaly prediction: "
-        f"{screening.get('anomaly_prediction')}"
-        f"\n- Anomaly score: "
-        f"{screening.get('anomaly_score'):.4f}"
-    )
 
     # Population context
     lines.append("\n## 2. Population Context")

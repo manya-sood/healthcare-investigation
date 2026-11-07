@@ -1,6 +1,9 @@
+import os
 import streamlit as st
 import pandas as pd
-import investigation
+import altair as alt
+import requests #send an HTTP request to FastAPI
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000") #API endpoint
 
 
 st.set_page_config(
@@ -27,21 +30,37 @@ if st.button("Run Investigation"):
 
     with st.spinner("Running investigation..."):
 
-        result = investigation.investigation_graph.invoke({
-            "provider_npi": provider_npi,
-            "profile": {},
-            "monthly_activity": [],
-            "population_comparison": {},
-            "hcpcs_activity": {},
-            "monthly_trends": {},
-            "monthly_consistency": {},
-            "report": {}
-        })
+        try:
+            response = requests.post(
+                f"{API_URL}/investigate", #API endpoint
+                json={"provider_npi": provider_npi},
+                timeout=300
+            )
 
-    report = result["report"]
+            response.raise_for_status()
+            data = response.json()
 
-    st.success("Investigation complete!")
-    
+            report = data["report"]
+            monthly_activity = data["monthly_activity"]
+
+        except requests.exceptions.ConnectionError:
+            st.error("Could not connect to the investigation API. Make sure the FastAPI server is running.")
+            st.stop()
+
+        except requests.exceptions.Timeout:
+            st.error("The investigation timed out. Please try again.")
+            st.stop()
+
+        except requests.exceptions.HTTPError as e:
+            st.error(f"Investigation failed: {e.response.json().get('detail', 'Unknown error')}")
+            st.stop()
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"An unexpected API error occurred: {e}")
+            st.stop()
+
+        st.success("Investigation complete!")
+
     # Investigation Overview
     st.header("Investigation Overview")
 
@@ -209,6 +228,7 @@ if st.button("Run Investigation"):
             f"${activity['total_payment']:,.2f}"
         )
 
+
     # 4. Monthly Trend Analysis
 
     st.subheader("4. Monthly Trend Analysis")
@@ -228,7 +248,7 @@ if st.button("Run Investigation"):
         )
 
     # Prepare monthly data for charts
-    monthly_df = pd.DataFrame(result["monthly_activity"])
+    monthly_df = pd.DataFrame(monthly_activity)
 
     monthly_df["claim_month"] = pd.to_datetime(
         monthly_df["claim_month"]
@@ -236,67 +256,115 @@ if st.button("Run Investigation"):
 
     monthly_df = monthly_df.sort_values("claim_month")
 
+    # Claim volume chart
     st.write("### Claim Volume Over Time")
 
-    claim_chart_df = monthly_df.set_index(
-        "claim_month"
-    )[["monthly_claim_lines"]]
+    claim_chart = alt.Chart(monthly_df).mark_line(
+        point=True
+    ).encode(
+        x=alt.X(
+            "claim_month:T",
+            title="Claim month",
+            axis=alt.Axis(format="%b %Y", tickCount=6, labelAngle=-45)
+        ),
+        y=alt.Y("monthly_claim_lines:Q", title="Claim lines"),
+        tooltip=[
+            alt.Tooltip("claim_month:T", title="Month", format="%B %Y"),
+            alt.Tooltip("monthly_claim_lines:Q", title="Claim lines")
+        ]
+    ).properties(height=300)
 
-    st.line_chart(claim_chart_df)
+    st.altair_chart(claim_chart, use_container_width=True)
 
+
+    # Payments chart
     st.write("### Payments Over Time")
-    payment_chart_df = monthly_df.set_index("claim_month")[["monthly_payment"]]
-    st.line_chart(
-        payment_chart_df,
-        x_label="Claim month",
-        y_label="Total payment ($)"
-    )
 
+    payment_chart = alt.Chart(monthly_df).mark_line(
+        point=True
+    ).encode(
+        x=alt.X(
+            "claim_month:T",
+            title="Claim month",
+            axis=alt.Axis(format="%b %Y", tickCount=6, labelAngle=-45)
+        ),
+        y=alt.Y("monthly_payment:Q", title="Total payment ($)"),
+        tooltip=[
+            alt.Tooltip("claim_month:T", title="Month", format="%B %Y"),
+            alt.Tooltip("monthly_payment:Q", title="Total payment ($)", format=",.2f")
+        ]
+    ).properties(height=300)
 
+    st.altair_chart(payment_chart, use_container_width=True)
     # 5. HCPCS Activity
     st.subheader("5. HCPCS Activity")
+
     hcpcs = report["hcpcs_summary"]
-
-    st.write(
-        f"Top codes account for "
-        f"{hcpcs['top_codes_payment_share']:.1%} "
-        "of total payments."
-    )
-
     hcpcs_rows = hcpcs.get("top_codes_by_payment", [])
 
-    if hcpcs_rows:
-        hcpcs_display_rows = []
+    st.write(
+        f"Top 10 HCPCS codes account for "
+        f"{hcpcs['top_codes_payment_share']:.1%} "
+        "of total provider payments."
+    )
 
-        for item in hcpcs_rows:
-            hcpcs_display_rows.append({
-                "HCPCS Code": item.get("hcpcs_code", "Unknown"),
-                "Claim Lines": item.get("claim_lines", 0),
-                "Total Payment": item.get("total_payment", 0),
-                "Payment Share": item.get("payment_share", 0),
-                "Claim-Line Share": item.get("claim_line_share", 0),
-            })
+    if len(hcpcs_rows) > 0:
 
-        hcpcs_df = pd.DataFrame(hcpcs_display_rows)
+        hcpcs_df = pd.DataFrame(hcpcs_rows)
 
-        hcpcs_df["Claim Lines"] = hcpcs_df["Claim Lines"].map(
-            lambda value: f"{value:,}"
-        )
-        hcpcs_df["Total Payment"] = hcpcs_df["Total Payment"].map(
-            lambda value: f"${value:,.2f}"
-        )
-        hcpcs_df["Payment Share"] = hcpcs_df["Payment Share"].map(
-            lambda value: f"{value:.1%}"
-        )
-        hcpcs_df["Claim-Line Share"] = hcpcs_df["Claim-Line Share"].map(
-            lambda value: f"{value:.1%}"
-        )
+        hcpcs_df = hcpcs_df.rename(columns={
+            "hcpcs_code": "HCPCS Code",
+            "claim_lines": "Claim Lines",
+            "unique_beneficiaries": "Unique Beneficiaries",
+            "total_payment": "Total Payment",
+            "payment_share": "Payment Share",
+            "claim_line_share": "Claim-Line Share",
+        })
+
+        hcpcs_df = hcpcs_df[
+            [
+                "HCPCS Code",
+                "Claim Lines",
+                "Unique Beneficiaries",
+                "Total Payment",
+                "Payment Share",
+                "Claim-Line Share",
+            ]
+        ]
+
+        #format percentages
+        hcpcs_df["Payment Share"] *= 100
+        hcpcs_df["Claim-Line Share"] *= 100
 
         st.dataframe(
             hcpcs_df,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "Claim Lines": st.column_config.NumberColumn(
+                    format="%d"
+                ),
+                "Unique Beneficiaries": st.column_config.NumberColumn(
+                    format="%d"
+                ),
+                "Total Payment": st.column_config.NumberColumn(
+                    format="$%.2f"
+                ),
+                "Payment Share": st.column_config.NumberColumn(
+                    format="%.1f%%"
+                ),
+                "Claim-Line Share": st.column_config.NumberColumn(
+                    format="%.1f%%"
+                ),
+            }
         )
+
+        st.caption(
+            "HCPCS codes are ranked by total payment. "
+            "Payment and claim-line shares represent each code's "
+            "portion of the provider's overall activity."
+        )
+
     else:
         st.info("No HCPCS activity is available for this provider.")
 
@@ -355,3 +423,5 @@ if st.button("Run Investigation"):
 
     for limitation in report["limitations"]:
         st.write(f"• {limitation}")
+
+    #terminal one to run the FastAPI server: uvicorn api:app --reload, terminal two to run the Streamlit app: streamlit run app.py

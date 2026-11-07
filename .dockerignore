@@ -1,0 +1,9 @@
+#keeping processed parquet data and exculding raw data and local development files from docker 
+.venv/
+.git/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+*.pyc
+data/raw/
