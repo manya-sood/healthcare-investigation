@@ -26,49 +26,35 @@ Users enter a provider's NPI and receive an investigation report containing anom
 
 ### Investigation Workflow
 
-CMS Claims Data
-      |
-      v
-Data Preparation & Feature Engineering
-      |
-      v
-Provider-Level Features & Processed Data
-      |
-      v
-Isolation Forest Anomaly Screening
-      |
-      v
-LangGraph Investigation Workflow
-      |
-      +--> Population Benchmarking
-      +--> Monthly Trend Analysis
-      +--> Activity Consistency Analysis
-      +--> HCPCS Procedure Analysis
-      |
-      v
-Structured Investigation Report
+flowchart TD
+    A["CMS Claims Data"] --> B["Data Preparation & Feature Engineering"]
+    B --> C["Provider-Level Features & Processed Data"]
+    C --> D["Isolation Forest Anomaly Screening"]
+    D --> E["LangGraph Investigation Workflow"]
+
+    E --> F["Population Benchmarking"]
+    E --> G["Monthly Trend Analysis"]
+    E --> H["Activity Consistency Analysis"]
+    E --> I["HCPCS Procedure Analysis"]
+
+    F --> J["Structured Investigation Report"]
+    G --> J
+    H --> J
+    I --> J
 
 
 ### Application Architecture
 
-          User
-           |
-           v
-   Streamlit Frontend
-           |
-           | HTTP Requests
-           v
-     FastAPI Backend
-           |
-           v
-   LangGraph Workflow
-           |
-           v
-  PySpark Analytics & ML
-           |
-           v
-   Processed Parquet Data
+flowchart TD
+    A["User"] --> B["Streamlit Frontend"]
+    B -->|"HTTP Requests"| C["FastAPI Backend"]
+    C --> D["LangGraph Investigation Workflow"]
+    D --> E["PySpark Analytics & ML"]
+    E --> F[("Processed Parquet Data")]
 
+    D -->|"Investigation Results"| C
+    C -->|"JSON Response"| B
+    B -->|"Displays Report & Visualizations"| A
 
 The application is containerized using Docker Compose, with the Streamlit frontend and FastAPI backend running in separate containers and communicating over an internal Docker network.
 
